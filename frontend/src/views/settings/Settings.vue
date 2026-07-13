@@ -380,8 +380,6 @@ const navGroups = computed<NavGroup[]>(() => {
         integrationSectionKey('im'),
         integrationSectionKey('embed'),
         integrationSectionKey('api'),
-        integrationSectionKey('chrome'),
-        integrationSectionKey('claw'),
       ]),
     },
     {
