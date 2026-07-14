@@ -96,7 +96,7 @@
     </div>
 
     <!-- Logo - Top Left -->
-    <img src="@/assets/img/nukem_logo.svg" alt="NukemKB" class="header-logo logo-image" />
+    <span class="header-logo logo-text">NukemKB</span>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
@@ -1127,6 +1127,13 @@ onMounted(async () => {
   left: 50px;
   z-index: 100;
   cursor: pointer;
+
+  &.logo-text {
+    font-size: 22px;
+    font-weight: 700;
+    color: #07C05F;
+    letter-spacing: -0.5px;
+  }
 
   .logo-image {
     width: 120px;
