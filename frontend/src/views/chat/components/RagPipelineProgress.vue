@@ -4,11 +4,12 @@
       <div class="tree-child tree-child-last streaming-loading-node">
         <div class="tree-branch" />
         <div class="tree-child-content">
-          <div class="loading-indicator">
-            <div class="loading-typing">
-              <span />
-              <span />
-              <span />
+          <div class="action-card action-pending">
+            <div class="action-header no-results">
+              <div class="action-title">
+                <t-icon class="action-title-icon" name="lightbulb" />
+                <span class="action-name">{{ t('chat.thinkingAlt') }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -63,14 +64,7 @@
                   <span class="action-name">{{ t('agent.think') }}</span>
                 </div>
               </div>
-              <div v-if="thinkingPending && !thinkingContent" class="thinking-loading">
-                <div class="loading-typing">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-              <div v-else-if="thinkingContent && thinkingExpanded" class="thinking-detail-content">
+              <div v-if="thinkingContent && thinkingExpanded" class="thinking-detail-content">
                 {{ thinkingContent }}
               </div>
             </div>
@@ -165,14 +159,7 @@
                     <span class="action-name">{{ t('agent.think') }}</span>
                   </div>
                 </div>
-                <div v-if="thinkingPending && !thinkingContent" class="thinking-loading">
-                  <div class="loading-typing">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </div>
-                <div v-else-if="thinkingContent && thinkingExpanded" class="thinking-detail-content">
+                <div v-if="thinkingContent && thinkingExpanded" class="thinking-detail-content">
                   {{ thinkingContent }}
                 </div>
               </div>
@@ -657,10 +644,6 @@ watch(thinkingExpanded, (expanded) => {
 }
 
 .rag-thinking-step {
-  .thinking-loading {
-    padding: 4px 0 0;
-  }
-
   .thinking-detail-content {
     margin-top: 4px;
     padding: 0;
