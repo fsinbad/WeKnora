@@ -121,31 +121,6 @@
         </div>
       </div>
 
-      <!-- 记忆功能开关 -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <label>{{ $t('settings.enableMemory') }}</label>
-          <p class="desc">{{ $t('settings.enableMemoryDesc') }}</p>
-        </div>
-        <div class="setting-control">
-          <t-switch
-            :value="isMemoryEnabled"
-            :disabled="!isNeo4jAvailable || memorySaving"
-            :loading="memorySaving"
-            @change="handleMemoryChange"
-          />
-        </div>
-      </div>
-      <t-alert
-        v-if="!isNeo4jAvailable"
-        theme="warning"
-        style="margin-top: -8px; margin-bottom: 16px;"
-      >
-        <template #message>
-          <div>{{ $t('settings.memoryRequiresNeo4j') }}</div>
-        </template>
-      </t-alert>
-
       <!-- 自动下载更新开关 (Lite edition only) -->
       <div class="setting-row" v-if="authStore.isLiteMode">
         <div class="setting-info">
