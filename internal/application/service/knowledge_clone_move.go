@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
@@ -42,7 +43,9 @@ func copyOwnedObject(
 // object into a NEW object owned by (tenantID, knowledgeID), and returns the
 // re-serialized image_info plus the list of newly-created object URLs (for
 // rollback on failure). urlCache dedups identical source objects across chunks
-// so the same source image is copied at most once per clone.
+// so the same source image is copied at most once per clone AND accumulates the
+// full old->new URL mapping so callers can rewrite in-content Markdown image
+// references (see rewriteContentImageURLs).
 //
 // An empty srcImageInfo yields ("", nil, nil). A JSON parse failure returns an
 // error (the clone fails) rather than silently inheriting the shared-reference
@@ -93,6 +96,36 @@ func cloneChunkImageInfo(
 		return "", copiedURLs, fmt.Errorf("failed to re-serialize chunk image_info: %w", err)
 	}
 	return string(out), copiedURLs, nil
+}
+
+// rewriteContentImageURLs replaces every occurrence of an old image URL with its
+// new (copied) URL in content, using the old->new mapping accumulated in
+// urlCache. It is the second half of the image deep-copy: chunk Content embeds
+// image URLs as Markdown ![](url) references, but for document knowledge the
+// image objects live in independent image_ocr/image_caption child chunks — the
+// parent text chunk carries the ![](url) reference with an empty image_info. So
+// the old->new mapping is only known after every chunk's image_info has been
+// processed; this rewrite must therefore run as a final pass once urlCache is
+// complete, over ALL cloned chunks, not per-chunk.
+//
+// Replacements are applied longest-old-URL first so a URL that is a prefix of
+// another is not partially rewritten. Entries whose old==new are skipped.
+func rewriteContentImageURLs(content string, urlCache map[string]string) string {
+	if content == "" || len(urlCache) == 0 {
+		return content
+	}
+	oldURLs := make([]string, 0, len(urlCache))
+	for oldURL, newURL := range urlCache {
+		if oldURL == "" || oldURL == newURL {
+			continue
+		}
+		oldURLs = append(oldURLs, oldURL)
+	}
+	slices.SortFunc(oldURLs, func(a, b string) int { return len(b) - len(a) })
+	for _, oldURL := range oldURLs {
+		content = strings.ReplaceAll(content, oldURL, urlCache[oldURL])
+	}
+	return content
 }
 
 // cleanupCopiedObjects deletes objects that were newly created during a clone
@@ -256,7 +289,11 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 			}
 
 			// Deep-copy extracted images into objects owned by the destination
-			// knowledge so deleting the source never breaks this clone.
+			// knowledge so deleting the source never breaks this clone. Content
+			// URL rewriting happens in a final pass below, once urlCache holds
+			// the complete old->new mapping (image objects live in independent
+			// child chunks, so a parent text chunk's ![](url) reference cannot be
+			// rewritten until its child image chunk has been processed).
 			newImageInfo, copied, copyErr := cloneChunkImageInfo(
 				ctx, dstSvc, sourceChunk.ImageInfo, dst.TenantID, dst.ID, urlCache)
 			if copyErr != nil {
@@ -293,6 +330,11 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 		}
 	}
 	for _, targetChunk := range targetChunks {
+		// Rewrite in-content Markdown image URLs now that urlCache holds the
+		// complete old->new mapping across all chunks. This fixes parent text
+		// chunks whose ![](url) reference points at a source object copied while
+		// processing an independent image_ocr/image_caption child chunk.
+		targetChunk.Content = rewriteContentImageURLs(targetChunk.Content, urlCache)
 		if val, ok := srcTodst[targetChunk.PreChunkID]; ok {
 			targetChunk.PreChunkID = val
 		} else {
@@ -675,7 +717,10 @@ func (s *knowledgeService) cloneFAQKnowledgeBase(
 			}
 
 			// Deep-copy extracted images into objects owned by the destination
-			// FAQ knowledge so deleting the source never breaks this clone.
+			// FAQ knowledge so deleting the source never breaks this clone. A FAQ
+			// chunk is self-contained (its own Content + image_info), so its
+			// ![](url) references can be rewritten immediately using the mapping
+			// just accumulated in imageURLCache.
 			newImageInfo, copied, copyErr := cloneChunkImageInfo(
 				ctx, dstSvc, srcChunk.ImageInfo, dstKB.TenantID, dstKnowledge.ID, imageURLCache)
 			if copyErr != nil {
@@ -692,7 +737,7 @@ func (s *knowledgeService) cloneFAQKnowledgeBase(
 				KnowledgeID:     dstKnowledge.ID,
 				KnowledgeBaseID: dstKB.ID,
 				TagID:           targetTagID,
-				Content:         srcChunk.Content,
+				Content:         rewriteContentImageURLs(srcChunk.Content, imageURLCache),
 				ChunkIndex:      srcChunk.ChunkIndex,
 				IsEnabled:       srcChunk.IsEnabled,
 				Flags:           srcChunk.Flags,

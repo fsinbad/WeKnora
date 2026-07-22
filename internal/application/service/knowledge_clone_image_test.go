@@ -106,6 +106,44 @@ func TestCloneChunkImageInfo_RewritesURLAndMatchedOriginal(t *testing.T) {
 	}
 }
 
+// TestRewriteContentImageURLs_ParentTextChunk covers the core scenario: an
+// image lives in an independent child chunk (so its image_info yields the
+// old->new URL mapping in urlCache), while the PARENT text chunk carries the
+// ![](url) reference with an empty image_info. The parent's content must still
+// be rewritten from the shared urlCache.
+func TestRewriteContentImageURLs_ParentTextChunk(t *testing.T) {
+	svc := &countingFileService{}
+	// Child image chunk populates urlCache via its image_info.
+	childImageInfo := mustImageInfoJSON(t, []types.ImageInfo{
+		{URL: "local://1/k0/a.png", OriginalURL: "local://1/k0/a.png"},
+	})
+	urlCache := map[string]string{}
+	if _, _, err := cloneChunkImageInfo(context.Background(), svc, childImageInfo, 7, "k-dst", urlCache); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parent text chunk has NO image_info but embeds the markdown reference.
+	parentContent := "See ![diagram](local://1/k0/a.png) here."
+	got := rewriteContentImageURLs(parentContent, urlCache)
+	want := "See ![diagram](local://7/k-dst/copy-of-local://1/k0/a.png) here."
+	if got != want {
+		t.Errorf("parent content image URL not rewritten:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestRewriteContentImageURLs_NoMappingIsNoop ensures content without any known
+// old URL is returned unchanged, and an empty cache is a no-op.
+func TestRewriteContentImageURLs_NoMappingIsNoop(t *testing.T) {
+	content := "See ![diagram](local://1/k0/a.png) here."
+	if got := rewriteContentImageURLs(content, map[string]string{}); got != content {
+		t.Errorf("empty cache must be no-op, got %q", got)
+	}
+	cache := map[string]string{"local://1/k0/other.png": "local://7/k-dst/copy.png"}
+	if got := rewriteContentImageURLs(content, cache); got != content {
+		t.Errorf("unrelated mapping must be no-op, got %q", got)
+	}
+}
+
 func TestCloneChunkImageInfo_PreservesUnmatchedOriginalURL(t *testing.T) {
 	svc := &countingFileService{}
 	src := mustImageInfoJSON(t, []types.ImageInfo{
