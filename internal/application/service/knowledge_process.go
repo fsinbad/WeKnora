@@ -220,24 +220,14 @@ func buildSplitterConfig(kb *types.KnowledgeBase) chunker.SplitterConfig {
 }
 
 func buildSplitterConfigFromChunking(cc types.ChunkingConfig) chunker.SplitterConfig {
-	chunkCfg := chunker.SplitterConfig{
+	return chunker.NormalizeSplitterConfig(chunker.SplitterConfig{
 		ChunkSize:    cc.ChunkSize,
 		ChunkOverlap: cc.ChunkOverlap,
 		Separators:   cc.Separators,
 		Strategy:     cc.Strategy,
 		TokenLimit:   cc.TokenLimit,
 		Languages:    cc.Languages,
-	}
-	if chunkCfg.ChunkSize <= 0 {
-		chunkCfg.ChunkSize = chunker.DefaultChunkSize
-	}
-	if chunkCfg.ChunkOverlap <= 0 {
-		chunkCfg.ChunkOverlap = chunker.DefaultChunkOverlap
-	}
-	if len(chunkCfg.Separators) == 0 {
-		chunkCfg.Separators = []string{"\n\n", "\n", "。"}
-	}
-	return chunkCfg
+	})
 }
 
 // buildParentChildConfigs derives parent and child SplitterConfig from ChunkingConfig.
@@ -661,7 +651,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	} else {
 		s.skipStage(ctx, knowledge.ID, types.StageMultimodal, "skipped")
 		// If there are no multimodal tasks, enqueue the post process task immediately
-		lang, _ := types.LanguageFromContext(ctx)
+		lang := types.LanguageFromContextOrDefault(ctx)
 		postProcessPayload := types.KnowledgePostProcessPayload{
 			TenantID:        knowledge.TenantID,
 			KnowledgeID:     knowledge.ID,
@@ -2375,7 +2365,7 @@ func (s *knowledgeService) ReparseKnowledge(
 			questionCount = 3
 		}
 
-		lang, _ := types.LanguageFromContext(ctx)
+		lang := types.LanguageFromContextOrDefault(ctx)
 		taskPayload := types.DocumentProcessPayload{
 			TenantID:                 tenantID,
 			KnowledgeID:              existing.ID,
@@ -2429,7 +2419,7 @@ func (s *knowledgeService) ReparseKnowledge(
 			questionCount = 3
 		}
 
-		lang, _ := types.LanguageFromContext(ctx)
+		lang := types.LanguageFromContextOrDefault(ctx)
 		taskPayload := types.DocumentProcessPayload{
 			TenantID:                 tenantID,
 			KnowledgeID:              existing.ID,
@@ -2482,7 +2472,7 @@ func (s *knowledgeService) ReparseKnowledge(
 			questionCount = 3
 		}
 
-		lang, _ := types.LanguageFromContext(ctx)
+		lang := types.LanguageFromContextOrDefault(ctx)
 		taskPayload := types.DocumentProcessPayload{
 			TenantID:                 tenantID,
 			KnowledgeID:              existing.ID,
@@ -3690,7 +3680,7 @@ func (s *knowledgeService) enqueueImageMultimodalTasks(
 			chunkID = chunks[0].ChunkID
 		}
 
-		lang, _ := types.LanguageFromContext(ctx)
+		lang := types.LanguageFromContextOrDefault(ctx)
 		payload := types.ImageMultimodalPayload{
 			TenantID:        knowledge.TenantID,
 			KnowledgeID:     knowledge.ID,
