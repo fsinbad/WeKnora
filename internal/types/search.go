@@ -207,6 +207,17 @@ type SearchResult struct {
 
 	// KnowledgeBaseID is the ID of the knowledge base this result belongs to
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
+
+	// ContentRevision is the chunk edit revision at retrieval time.
+	// Internal only: used by the merge pipeline to decide whether source
+	// coordinates are still trustworthy.
+	//
+	// Zero means "never edited", so any construction path that forgets to carry
+	// it over fails open to the position path. Results rebuilt from JSON (stored
+	// message references) always land on zero because the field is not
+	// serialized; the length invariant in chunkTrusted is the remaining guard
+	// there. Keep the gorm column explicit so direct row scans populate it.
+	ContentRevision int `gorm:"column:content_revision" json:"-"`
 }
 
 // SearchParams represents the search parameters
