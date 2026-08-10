@@ -116,6 +116,11 @@
                     <StorageEngineSettings />
                   </div>
 
+                  <!-- 沙箱后端 -->
+                  <div v-if="currentSection === 'sandbox'" class="section">
+                    <SandboxSettings />
+                  </div>
+
                   <!-- 系统信息 -->
                   <div v-if="currentSection === 'system'" class="section">
                     <SystemInfo />
@@ -192,6 +197,7 @@ import ChatHistorySettings from './ChatHistorySettings.vue'
 import VectorStoreSettings from './VectorStoreSettings.vue'
 import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageBackendSettings.vue'
+import SandboxSettings from './SandboxSettings.vue'
 import TenantMembers from './TenantMembers.vue'
 import SystemSettings from '@/views/system/SystemSettings.vue'
 import RuntimeQueues from '@/views/system/RuntimeQueues.vue'
@@ -314,6 +320,7 @@ const navItems = computed(() => {
     { key: 'vectorstore', icon: 'data-base', label: t('settings.vectorStoreEngine') },
     { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
     { key: 'storage', icon: 'cloud', label: t('settings.storageEngine') },
+    { key: 'sandbox', icon: 'server', label: t('settings.sandbox.title') },
     { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
     { key: 'system', icon: 'info-circle', label: t('settings.versionInfo') },
     { key: 'system-global', icon: 'server', label: t('settings.system') },
@@ -373,6 +380,7 @@ const navGroups = computed<NavGroup[]>(() => {
         'vectorstore',
         'parser',
         'storage',
+        'sandbox',
         'websearch',
         'mcp',
       ]),
