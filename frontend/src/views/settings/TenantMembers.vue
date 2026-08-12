@@ -505,6 +505,7 @@
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { copyWithToast } from '@/utils/clipboard'
 import { useAuthStore } from '@/stores/auth'
 import { AUDIT_ACTION_I18N_ROOTS } from '@/i18n/auditActionRegistry'
 import { auditActionLabel } from '@/i18n/auditActionLabel'
@@ -1256,13 +1257,7 @@ function absoluteInviteURL(raw: string): string {
 }
 
 async function copyText(text: string) {
-  if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    MessagePlugin.success(t('tenantInvitation.copied'))
-  } catch {
-    MessagePlugin.error(t('tenantInvitation.copyFailed'))
-  }
+  await copyWithToast(text, 'tenantInvitation.copied', 'tenantInvitation.copyFailed')
 }
 
 async function submitShareLink() {

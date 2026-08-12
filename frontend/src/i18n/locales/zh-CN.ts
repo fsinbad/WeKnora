@@ -583,6 +583,16 @@ export default {
     connectionFailed: '连接失败',
     isRequired: '为必填项',
     credentialsLabel: '凭证',
+    gitlab: {
+      baseUrl: 'GitLab 地址',
+      accessToken: '个人访问令牌',
+      projects: 'GitLab 项目',
+      projectsHint: '填写项目 ID 或命名空间路径（如 group/project），可选指定分支和目录。',
+      project: '项目', projectId: '项目 ID', projectIdPlaceholder: '例如：12345 或 group/project',
+      ref: '分支', refPlaceholder: '留空时使用默认分支',
+      paths: '同步目录', pathsPlaceholder: '每行一个目录；留空同步整个项目',
+      addProject: '添加项目', projectRequired: '请至少添加一个 GitLab 项目',
+    },
     resourceHint: '选择要同步的内容空间/文件夹',
     untitled: '无标题',
     resourceLoadFailed: '加载资源列表失败',
@@ -705,7 +715,8 @@ export default {
       notion: '同步 Notion 中的页面和数据库',
       yuque: '同步语雀知识库中的文档',
       ima: '同步腾讯 IMA 知识库中的文档、笔记与文件（暂不支持 AI 会话与视频解析）',
-      rss: '同步 RSS / Atom 订阅源中的文章'
+      rss: '同步 RSS / Atom 订阅源中的文章',
+      gitlab: '同步 GitLab 项目中的文件'
     },
     connector: {
       feishu: '飞书',
@@ -715,7 +726,8 @@ export default {
       notion: 'Notion',
       yuque: '语雀',
       ima: '腾讯 IMA',
-      rss: 'RSS / Atom 订阅'
+      rss: 'RSS / Atom 订阅',
+      gitlab: 'GitLab'
     },
     logDetail: {
       startTime: '开始时间',
@@ -980,6 +992,7 @@ export default {
       consoleTip: '前往获取凭证信息',
       wecomWSEndpointHint: '可选，私有化部署时填写自定义 WebSocket 地址，留空则使用默认公有云地址。内网地址需将域名加入 SSRF_WHITELIST 环境变量',
       wecomAPIBaseURLHint: '可选，私有化部署时填写自定义 API 地址，留空则使用默认公有云地址。内网地址需将域名加入 SSRF_WHITELIST 环境变量',
+      feishuAPIBaseURLHint: '可选。若服务器能直连外网则留空；若需通过代理才能访问飞书，填写反向代理地址（如 nginx，http://host:port）。内网地址需将域名加入 SSRF_WHITELIST 环境变量',
       fileKnowledgeBase: '文件保存知识库',
       fileKnowledgeBasePlaceholder: '选择知识库（可选）',
       fileKnowledgeBaseHint: '配置后，用户发送的文件将自动保存到该知识库中',
@@ -3558,6 +3571,7 @@ export default {
       similarityThresholdLabel: '相似度阈值',
       statusEnabled: '已启用',
       statusDisabled: '已禁用',
+      statusEnableSuccess: 'FAQ 条目已启用',
       statusDisableSuccess: 'FAQ 条目已禁用',
       statusUpdateFailed: '更新状态失败',
       recommended: '推荐',
@@ -3567,6 +3581,11 @@ export default {
       recommendedUpdateFailed: '更新推荐状态失败',
       batchUpdateTag: '批量设置标签',
       batchUpdateTagTip: '将为 {count} 个选中的条目设置标签',
+      batchEnable: '批量启用',
+      batchDisable: '批量禁用',
+      batchDelete: '批量删除',
+      confirmBatchDelete: '确认删除选中的 {count} 个 FAQ 条目？删除后将无法恢复。',
+      batchDeleteSuccess: '已删除 {count} 个 FAQ 条目',
       modes: {
         questionOnly: '仅标准问/相似问',
         questionAnswer: '标准问 + 答案',
@@ -5600,6 +5619,7 @@ export default {
     channelIm: 'IM 渠道',
     channelNotion: 'Notion',
     channelYuque: '语雀',
+    channelGitLab: 'GitLab',
     channelIma: '腾讯 IMA',
     channelUpload: '上传',
     channelManual: '手动',

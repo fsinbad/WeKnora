@@ -583,6 +583,14 @@ export default {
     connectionFailed: 'Подключение не удалось',
     isRequired: 'обязательно для заполнения',
     credentialsLabel: 'учётные данные',
+    gitlab: {
+      baseUrl: 'URL GitLab', accessToken: 'Персональный токен доступа', projects: 'Проекты GitLab',
+      projectsHint: 'Укажите ID проекта или путь в пространстве имён (например group/project), а также при необходимости ветку и каталоги.',
+      project: 'Проект', projectId: 'ID проекта', projectIdPlaceholder: 'Например: 12345 или group/project',
+      ref: 'Ветка', refPlaceholder: 'Оставьте пустым, чтобы использовать ветку по умолчанию',
+      paths: 'Каталоги', pathsPlaceholder: 'По одному каталогу в строке; оставьте пустым для синхронизации всего проекта',
+      addProject: 'Добавить проект', projectRequired: 'Добавьте хотя бы один проект GitLab',
+    },
     resourceHint: 'Выберите пространства или папки для синхронизации',
     untitled: 'Без названия',
     resourceLoadFailed: 'Не удалось загрузить список ресурсов',
@@ -705,7 +713,8 @@ export default {
       notion: 'Синхронизация страниц и баз данных из Notion',
       yuque: 'Синхронизация документов из баз знаний Yuque',
       ima: 'Синхронизация документов, заметок и файлов из баз знаний Tencent IMA (ИИ-сессии и разбор видео не поддерживаются)',
-      rss: 'Синхронизация статей из лент RSS / Atom'
+      rss: 'Синхронизация статей из лент RSS / Atom',
+      gitlab: 'Синхронизация файлов из проектов GitLab'
     },
     connector: {
       feishu: 'Feishu (Фэйшу)',
@@ -715,7 +724,8 @@ export default {
       notion: 'Notion',
       yuque: 'Yuque (Юйцюэ)',
       ima: 'Tencent IMA',
-      rss: 'RSS / Atom лента'
+      rss: 'RSS / Atom лента',
+      gitlab: 'GitLab'
     },
     logDetail: {
       startTime: 'Время начала',
@@ -980,6 +990,7 @@ export default {
       consoleTip: 'для получения учётных данных',
       wecomWSEndpointHint: 'Необязательно. Для приватного развёртывания WeCom укажите пользовательский адрес WebSocket. Оставьте пустым для публичного облака. Для адресов внутренней сети добавьте имя хоста в переменную SSRF_WHITELIST.',
       wecomAPIBaseURLHint: 'Необязательно. Для приватного развёртывания WeCom укажите пользовательский базовый URL API. Оставьте пустым для публичного облака. Для адресов внутренней сети добавьте имя хоста в переменную SSRF_WHITELIST.',
+      feishuAPIBaseURLHint: 'Необязательно. Оставьте пустым, если сервер имеет прямой доступ в интернет; если для доступа к Feishu требуется прокси, укажите URL обратного прокси (например, nginx, http://host:port). Для адресов внутренней сети добавьте имя хоста в переменную SSRF_WHITELIST.',
       fileKnowledgeBase: 'База знаний для файлов',
       fileKnowledgeBasePlaceholder: 'Выберите базу знаний (необязательно)',
       fileKnowledgeBaseHint: 'При настройке файлы, отправленные пользователями, автоматически сохраняются в эту базу знаний',
@@ -3558,6 +3569,7 @@ export default {
       similarityThresholdLabel: 'Порог сходства',
       statusEnabled: 'Включено',
       statusDisabled: 'Выключено',
+      statusEnableSuccess: 'Запись FAQ включена',
       statusDisableSuccess: 'Запись FAQ отключена',
       statusUpdateFailed: 'Не удалось обновить статус',
       recommended: 'Рекомендовать',
@@ -3567,6 +3579,11 @@ export default {
       recommendedUpdateFailed: 'Не удалось обновить статус рекомендации',
       batchUpdateTag: 'Пакетная установка тегов',
       batchUpdateTagTip: 'Установить теги для {count} выбранных записей',
+      batchEnable: 'Включить выбранные',
+      batchDisable: 'Отключить выбранные',
+      batchDelete: 'Удалить выбранные',
+      confirmBatchDelete: 'Удалить выбранные записи FAQ ({count})? Это действие нельзя отменить.',
+      batchDeleteSuccess: 'Удалено записей FAQ: {count}',
       modes: {
         questionOnly: 'Только вопросы',
         questionAnswer: 'Вопрос + ответ',
@@ -5600,6 +5617,7 @@ export default {
     channelIm: 'IM канал',
     channelNotion: 'Notion',
     channelYuque: 'Yuque',
+    channelGitLab: 'GitLab',
     channelIma: 'Tencent IMA',
     channelUpload: 'Загрузка',
     channelManual: 'Вручную',

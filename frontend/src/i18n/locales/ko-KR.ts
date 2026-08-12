@@ -583,6 +583,14 @@ export default {
     connectionFailed: '연결 실패',
     isRequired: '은(는) 필수입니다',
     credentialsLabel: '자격 증명',
+    gitlab: {
+      baseUrl: 'GitLab URL', accessToken: '개인 액세스 토큰', projects: 'GitLab 프로젝트',
+      projectsHint: '프로젝트 ID 또는 네임스페이스 경로(예: group/project)를 입력하고, 필요에 따라 브랜치와 디렉터리를 지정하세요.',
+      project: '프로젝트', projectId: '프로젝트 ID', projectIdPlaceholder: '예: 12345 또는 group/project',
+      ref: '브랜치', refPlaceholder: '비워 두면 기본 브랜치를 사용합니다',
+      paths: '디렉터리', pathsPlaceholder: '한 줄에 하나씩 입력하세요. 비워 두면 전체 프로젝트를 동기화합니다',
+      addProject: '프로젝트 추가', projectRequired: 'GitLab 프로젝트를 하나 이상 추가하세요',
+    },
     resourceHint: '동기화할 공간/폴더를 선택하세요',
     untitled: '제목 없음',
     resourceLoadFailed: '리소스 목록 로드 실패',
@@ -705,7 +713,8 @@ export default {
       notion: 'Notion에서 페이지 및 데이터베이스 동기화',
       yuque: '위큐 지식베이스에서 문서 동기화',
       ima: 'Tencent IMA 지식베이스에서 문서, 노트 및 파일 동기화 (AI 세션과 동영상 분석은 지원되지 않음)',
-      rss: 'RSS / Atom 피드에서 글 동기화'
+      rss: 'RSS / Atom 피드에서 글 동기화',
+      gitlab: 'GitLab 프로젝트의 파일 동기화'
     },
     connector: {
       feishu: '페이슈 (Feishu)',
@@ -715,7 +724,8 @@ export default {
       notion: 'Notion',
       yuque: '위큐 (Yuque)',
       ima: 'Tencent IMA',
-      rss: 'RSS / Atom 피드'
+      rss: 'RSS / Atom 피드',
+      gitlab: 'GitLab'
     },
     logDetail: {
       startTime: '시작 시간',
@@ -980,6 +990,7 @@ export default {
       consoleTip: '자격 증명 정보를 가져오세요',
       wecomWSEndpointHint: '선택 사항. 프라이빗 WeCom 배포 시 사용자 정의 WebSocket 주소를 입력하세요. 비워두면 기본 퍼블릭 클라우드 주소를 사용합니다. 내부 네트워크 주소의 경우 SSRF_WHITELIST 환경 변수에 호스트명을 추가하세요.',
       wecomAPIBaseURLHint: '선택 사항. 프라이빗 WeCom 배포 시 사용자 정의 API 기본 URL을 입력하세요. 비워두면 기본 퍼블릭 클라우드 주소를 사용합니다. 내부 네트워크 주소의 경우 SSRF_WHITELIST 환경 변수에 호스트명을 추가하세요.',
+      feishuAPIBaseURLHint: '선택 사항. 서버가 외부 인터넷에 직접 연결 가능하면 비워두세요. 프록시를 통해서만 접근 가능한 경우 역방향 프록시 URL(예: nginx, http://host:port)을 입력하세요. 내부 네트워크 주소는 SSRF_WHITELIST 환경 변수에 호스트명을 추가하세요.',
       fileKnowledgeBase: '파일 저장 지식 베이스',
       fileKnowledgeBasePlaceholder: '지식 베이스 선택 (선택 사항)',
       fileKnowledgeBaseHint: '설정 시 사용자가 보낸 파일이 자동으로 해당 지식 베이스에 저장됩니다',
@@ -3558,6 +3569,7 @@ export default {
       similarityThresholdLabel: '유사도 임계값',
       statusEnabled: '활성화됨',
       statusDisabled: '비활성화됨',
+      statusEnableSuccess: 'FAQ 항목이 활성화되었습니다',
       statusDisableSuccess: 'FAQ 항목이 비활성화되었습니다',
       statusUpdateFailed: '상태 업데이트 실패',
       recommended: '추천',
@@ -3567,6 +3579,11 @@ export default {
       recommendedUpdateFailed: '추천 상태 업데이트 실패',
       batchUpdateTag: '일괄 태그 설정',
       batchUpdateTagTip: '{count}개 선택된 항목에 태그가 설정됩니다',
+      batchEnable: '일괄 활성화',
+      batchDisable: '일괄 비활성화',
+      batchDelete: '일괄 삭제',
+      confirmBatchDelete: '선택한 FAQ 항목 {count}개를 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.',
+      batchDeleteSuccess: 'FAQ 항목 {count}개를 삭제했습니다',
       modes: {
         questionOnly: '표준 질문/유사 질문만',
         questionAnswer: '표준 질문 + 답변',
@@ -5600,6 +5617,7 @@ export default {
     channelIm: 'IM 채널',
     channelNotion: 'Notion',
     channelYuque: 'Yuque',
+    channelGitLab: 'GitLab',
     channelIma: 'Tencent IMA',
     channelUpload: '업로드',
     channelManual: '수동',

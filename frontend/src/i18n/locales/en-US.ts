@@ -466,6 +466,7 @@ export default {
     channelIm: 'IM Channel',
     channelNotion: 'Notion',
     channelYuque: 'Yuque',
+    channelGitLab: 'GitLab',
     channelIma: 'Tencent IMA',
     channelUpload: 'Upload',
     channelManual: 'Manual',
@@ -2623,6 +2624,7 @@ export default {
       similarityThresholdLabel: 'Similarity Threshold',
       statusEnabled: 'Enabled',
       statusDisabled: 'Disabled',
+      statusEnableSuccess: 'FAQ entry enabled',
       statusDisableSuccess: 'FAQ entry disabled',
       statusUpdateFailed: 'Failed to update status',
       recommended: 'Recommend',
@@ -2631,7 +2633,12 @@ export default {
       recommendedDisableSuccess: 'FAQ entry recommendation disabled',
       recommendedUpdateFailed: 'Failed to update recommendation status',
       batchUpdateTag: 'Batch Set Tags',
-      batchUpdateTagTip: 'Set tags for {count} selected entries'
+      batchUpdateTagTip: 'Set tags for {count} selected entries',
+      batchEnable: 'Enable selected',
+      batchDisable: 'Disable selected',
+      batchDelete: 'Delete selected',
+      confirmBatchDelete: 'Delete the selected {count} FAQ entries? This action cannot be undone.',
+      batchDeleteSuccess: 'Deleted {count} FAQ entries'
     },
     faqImport: {
       title: 'Batch Import FAQ',
@@ -5202,6 +5209,7 @@ export default {
       consoleTip: 'to get credentials',
       wecomWSEndpointHint: 'Optional. For private WeCom deployments, enter a custom WebSocket address. Leave empty to use the default public cloud endpoint. For internal network addresses, add the hostname to the SSRF_WHITELIST env var.',
       wecomAPIBaseURLHint: 'Optional. For private WeCom deployments, enter a custom API base URL. Leave empty to use the default public cloud endpoint. For internal network addresses, add the hostname to the SSRF_WHITELIST env var.',
+      feishuAPIBaseURLHint: 'Optional. Leave empty if the server can reach the internet directly; if a proxy is required to access Feishu, enter the reverse proxy URL (e.g. nginx, http://host:port). For internal network addresses, add the hostname to the SSRF_WHITELIST env var.',
       fileKnowledgeBase: 'File Storage Knowledge Base',
       fileKnowledgeBasePlaceholder: 'Select a knowledge base (optional)',
       fileKnowledgeBaseHint: 'When configured, files sent by users will be automatically saved to this knowledge base',
@@ -5409,6 +5417,14 @@ export default {
     connectionFailed: 'Connection failed',
     isRequired: 'is required',
     credentialsLabel: 'credentials',
+    gitlab: {
+      baseUrl: 'GitLab URL', accessToken: 'Personal access token', projects: 'GitLab projects',
+      projectsHint: 'Enter a project ID or namespace path (for example group/project), with optional branch and directories.',
+      project: 'Project', projectId: 'Project ID', projectIdPlaceholder: 'For example: 12345 or group/project',
+      ref: 'Branch', refPlaceholder: 'Leave empty to use the default branch',
+      paths: 'Directories', pathsPlaceholder: 'One directory per line; leave empty to sync the whole project',
+      addProject: 'Add project', projectRequired: 'Add at least one GitLab project',
+    },
     resourceHint: 'Select the spaces or folders to sync',
     untitled: 'Untitled',
     resourceLoadFailed: 'Failed to load resources',
@@ -5476,8 +5492,9 @@ export default {
       lark_drive: 'Lark Drive',
       notion: 'Notion',
       yuque: 'Yuque',
+      rss: 'RSS / Atom Feed',
       ima: 'Tencent IMA',
-      rss: 'RSS / Atom Feed'
+      gitlab: 'GitLab'
     },
     connectorDesc: {
       feishu: 'Sync documents, spreadsheets and files from Feishu Wiki',
@@ -5486,8 +5503,9 @@ export default {
       lark_drive: 'Sync documents, spreadsheets and files from a Lark Drive folder (Feishu international)',
       notion: 'Sync pages and databases from Notion',
       yuque: 'Sync documents from Yuque knowledge bases',
+      rss: 'Sync articles from RSS / Atom feeds',
       ima: 'Sync documents, notes and files from Tencent IMA knowledge bases (AI sessions and video parses are not supported)',
-      rss: 'Sync articles from RSS / Atom feeds'
+      gitlab: 'Sync files from GitLab projects'
     },
     drive: {
       folderTokenLabel: 'Drive folder token',
