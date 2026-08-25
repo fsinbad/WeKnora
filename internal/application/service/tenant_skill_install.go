@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -19,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 const (
@@ -84,7 +86,29 @@ func (s *TenantSkillService) InstallSkill(
 			BundleSHA256: bundle.SHA256, Enabled: true,
 			Status: types.SkillStatusInstalling, InstallingSince: &now,
 		}); err != nil {
-			return "", err
+			if !isSkillNameConflict(err) {
+				return "", err
+			}
+			// Two first-time uploads of the same name raced the unique index.
+			// Take the row that won rather than surfacing a 500.
+			winner, lookupErr := s.skills.GetSkillByName(ctx, tenantID, configID, bundle.Name)
+			if lookupErr != nil {
+				return "", lookupErr
+			}
+			if winner == nil {
+				return "", err
+			}
+			skillID = winner.ID
+			winner.Version = bundle.Version
+			winner.Description = bundle.Description
+			winner.Instructions = bundle.Instructions
+			winner.BundleSHA256 = bundle.SHA256
+			winner.Status = types.SkillStatusInstalling
+			winner.Error = ""
+			winner.InstallingSince = &now
+			if err := s.skills.UpdateSkill(ctx, winner); err != nil {
+				return "", err
+			}
 		}
 	}
 
@@ -96,7 +120,10 @@ func (s *TenantSkillService) InstallSkill(
 	if err != nil {
 		failCtx, cancelFail := s.cleanupContext(ctx)
 		defer cancelFail()
-		s.failSkill(failCtx, tenantID, configID, skillID, bundle, fmt.Errorf("store bundle: %w", err))
+		storeErr := fmt.Errorf("store bundle: %w", err)
+		logger.Errorf(ctx, "[skill] store bundle failed tenant=%d config=%s skill=%s name=%s: %v",
+			tenantID, configID, skillID, bundle.Name, err)
+		s.failSkill(failCtx, tenantID, configID, skillID, bundle, storeErr)
 		return "", fmt.Errorf("store bundle for skill %s: %w", skillID, err)
 	}
 	_ = s.updateSkillFields(ctx, tenantID, configID, skillID, func(e *types.TenantSkillEntity) {
@@ -234,7 +261,7 @@ func (s *TenantSkillService) runInstall(
 	s.publishProgress(ctx, tenantID, configID, skillID, SkillProgress{Percent: 35, Stage: "seeded"})
 
 	// 3. Let the installer agent install dependencies.
-	if err := s.driveInstallerAgent(ctx, tenantID, sess, mgr, skillDir, bundle); err != nil {
+	if err := s.driveInstallerAgent(ctx, tenantID, skillID, sess, mgr, skillDir, bundle); err != nil {
 		return err
 	}
 	s.publishProgress(ctx, tenantID, configID, skillID, SkillProgress{Percent: 80, Stage: "agent_done"})
@@ -470,8 +497,8 @@ func (s *TenantSkillService) seedSkillFiles(
 // swallows engine failures (it emits an error event and returns nil) and we
 // need a reliable signal before switching the image.
 func (s *TenantSkillService) driveInstallerAgent(
-	ctx context.Context, tenantID uint64, sess *types.Session, mgr sandbox.Manager,
-	skillDir string, bundle *SkillBundle,
+	ctx context.Context, tenantID uint64, skillID string, sess *types.Session,
+	mgr sandbox.Manager, skillDir string, bundle *SkillBundle,
 ) error {
 	if s.installerAgents == nil {
 		return errors.New("custom agent service is not configured")
@@ -493,20 +520,49 @@ func (s *TenantSkillService) driveInstallerAgent(
 
 	bus := event.NewEventBus()
 	assistantMessageID := uuid.NewString()
+	prompt := buildInstallPrompt(skillDir, bundle, s.probeUv(ctx, mgr, sess.ID))
+
+	// The transcript is set up before the engine so a console that attaches
+	// while the install is still running finds a message to stream into. Its
+	// failures are logged rather than returned: an unreadable transcript is a
+	// worse outcome than no transcript, but neither is a reason to refuse an
+	// otherwise good install.
+	transcript := newInstallTranscript(ctx, bus, s.streams, s.messages, sess.ID, assistantMessageID)
+	if err := transcript.Create(ctx, prompt); err != nil {
+		logger.Warnf(ctx, "[skill] seed install transcript for %s failed: %v", skillID, err)
+	}
+	transcript.Subscribe()
+	if err := s.updateSkillFields(ctx, tenantID, sess.SandboxConfigID, skillID,
+		func(e *types.TenantSkillEntity) {
+			e.InstallSessionID = sess.ID
+			e.InstallMessageID = assistantMessageID
+		}); err != nil {
+		logger.Warnf(ctx, "[skill] record transcript locators for %s failed: %v", skillID, err)
+	}
+
 	engine, err := s.agents.CreateAgentEngine(
 		ctx, agentConfig, chatModel, nil, bus, sess.ID, assistantMessageID,
 	)
 	if err != nil {
-		return fmt.Errorf("create installer engine: %w", err)
+		runErr := fmt.Errorf("create installer engine: %w", err)
+		transcript.Finish(ctx, runErr)
+		return runErr
 	}
 
-	prompt := buildInstallPrompt(skillDir, bundle, s.probeUv(ctx, mgr, sess.ID))
 	state, err := engine.Execute(ctx, sess.ID, assistantMessageID, prompt, nil)
-	if err != nil {
-		return fmt.Errorf("installer agent failed: %w", err)
+	runErr := err
+	if runErr == nil && (state == nil || !state.IsComplete) {
+		runErr = errors.New("installer agent stopped without completing")
 	}
-	if state == nil || !state.IsComplete {
-		return errors.New("installer agent stopped without completing")
+	// Detached from cancellation: when the install lock's renewal fails the
+	// context dies, and the transcript of the run that just died is precisely
+	// what someone will want to read.
+	transcript.Finish(context.WithoutCancel(ctx), runErr)
+	if runErr != nil {
+		if err != nil {
+			return fmt.Errorf("installer agent failed: %w", err)
+		}
+		return runErr
 	}
 	return nil
 }
@@ -569,16 +625,24 @@ func (s *TenantSkillService) verifyDeclaredDependencies(
 	return nil
 }
 
-// normalizeSkillPermissions hands the skill tree to the execution user.
-// Installs run as root, so without this the non-root user that actually runs
-// skills could not read them — which is also why it runs before verification:
-// the smoke test has to exercise the permissions the snapshot will carry.
+// normalizeSkillPermissions makes the skill tree readable and executable by
+// the non-root execution user, and writable by nobody. Installs run as root,
+// so without the mode change the user that actually runs skills could not read
+// them at all — which is also why this runs before verification: the smoke
+// test has to exercise the permissions the snapshot will carry.
+//
+// Ownership stays with root rather than moving to the execution user because
+// this tree is baked into an image every session of the config inherits. A
+// session that could write here would be editing the skills every other
+// session runs. 555 leaves reads and execs to the "other" bits, which is all a
+// skill run needs; the cost is that Python cannot write __pycache__ into the
+// tree and silently skips bytecode caching.
 func (s *TenantSkillService) normalizeSkillPermissions(
 	ctx context.Context, mgr sandbox.Manager, sessionID, skillDir string,
 ) error {
 	cmds := []string{
-		fmt.Sprintf("chmod -R 755 %s", sandbox.ShellQuote(skillDir)),
-		fmt.Sprintf("chown -R %s %s", sandbox.DefaultSandboxExecUser, sandbox.ShellQuote(skillDir)),
+		fmt.Sprintf("chmod -R 555 %s", sandbox.ShellQuote(skillDir)),
+		fmt.Sprintf("chown -R root:root %s", sandbox.ShellQuote(skillDir)),
 	}
 	for _, cmd := range cmds {
 		if _, err := s.execInstall(ctx, mgr, sessionID, cmd); err != nil {
@@ -675,18 +739,35 @@ func (s *TenantSkillService) execInstall(
 	return res, nil
 }
 
+func (s *TenantSkillService) tenantForStorage(ctx context.Context, tenantID uint64) *types.Tenant {
+	if info, ok := types.TenantInfoFromContext(ctx); ok && info.ID == tenantID {
+		return info
+	}
+	return &types.Tenant{ID: tenantID}
+}
+
+func (s *TenantSkillService) fileServiceForTenant(
+	ctx context.Context, tenantID uint64,
+) (interfaces.FileService, error) {
+	if s.resolver == nil {
+		return nil, errors.New("storage resolver is not configured")
+	}
+	fs, _, err := s.resolver.ResolveFileService(ctx, s.tenantForStorage(ctx, tenantID), "", "", "")
+	if err != nil {
+		return nil, err
+	}
+	if fs == nil {
+		return nil, errors.New("file service is not configured")
+	}
+	return fs, nil
+}
+
 func (s *TenantSkillService) saveBundle(
 	ctx context.Context, tenantID uint64, skillID string, archive []byte,
 ) (string, error) {
-	if s.resolver == nil {
-		return "", errors.New("storage resolver is not configured")
-	}
-	fs, _, err := s.resolver.ResolveFileService(ctx, &types.Tenant{ID: tenantID}, "", "", "")
+	fs, err := s.fileServiceForTenant(ctx, tenantID)
 	if err != nil {
 		return "", err
-	}
-	if fs == nil {
-		return "", errors.New("file service is not configured")
 	}
 	return fs.SaveBytes(ctx, archive, tenantID, fmt.Sprintf("tenant-skills/%s.zip", skillID), false)
 }
@@ -818,6 +899,10 @@ func (s *TenantSkillService) installStillOwnsTheRow(
 // operation name is carried into the session because the transcript is kept
 // deliberately, for troubleshooting: filing a removal's under "Skill install"
 // would send whoever reads it looking at the wrong operation.
+//
+// The description marker is what keeps this row out of the console's session
+// list, and the owner is the admin who started the operation, so a transcript
+// is readable by the person who caused it rather than by the whole workspace.
 func (s *TenantSkillService) startMaintenanceSession(
 	ctx context.Context, tenantID uint64, configID, operation string,
 ) (*types.Session, sandbox.Manager, error) {
@@ -840,8 +925,9 @@ func (s *TenantSkillService) startMaintenanceSession(
 	}
 	sess, err := s.sessions.CreateSession(ctx, &types.Session{
 		TenantID:        tenantID,
+		UserID:          sessionUserIDFromContext(ctx),
 		Title:           "Skill " + operation,
-		Description:     "Tenant skill image maintenance",
+		Description:     types.SkillMaintenanceSessionMarker + operation,
 		SandboxConfigID: configID,
 	})
 	if err != nil {
@@ -1307,6 +1393,19 @@ func currentBaseTemplate(cfg *types.TenantSandboxConfig) string {
 	return ""
 }
 
+// isSkillNameConflict recognises the unique (config, name) violation two
+// concurrent first-time uploads of the same skill produce.
+func isSkillNameConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique constraint")
+}
+
 func skillOwnerFingerprint(cfg *types.TenantSandboxConfig) string {
 	if cfg == nil {
 		return ""
@@ -1324,15 +1423,83 @@ func skillOwnerFingerprint(cfg *types.TenantSandboxConfig) string {
 	return ""
 }
 
-// markConfigSandboxesStale is deliberately a no-op here. Sessions that already
-// hold a live sandbox keep running on the previous image until it is replaced;
-// marking and rebuilding those bindings is Task 13 (stale sandbox rebuild),
-// which owns the session-side state this would have to touch. Future sessions
-// already pick up the new snapshot through the config pointer.
+// configSandboxInvalidator is the narrow capability marking bound sandboxes
+// needs. It is reached by type assertion rather than declared on Manager
+// because only the session-bound remote manager owns bindings to mark: a local
+// or disabled backend has none, and for those doing nothing is correct.
+type configSandboxInvalidator interface {
+	InvalidateConfigSandboxes(ctx context.Context, tenantID uint64, configID string) (int, error)
+}
+
+// The manager the resolver hands out must keep satisfying this, so a rename on
+// the sandbox side breaks the build instead of silently skipping every mark.
+var _ configSandboxInvalidator = (*sandbox.SessionBoundManager)(nil)
+
+// markConfigSandboxesStale tells every session already holding a sandbox of
+// this config that the image underneath it has been replaced.
+//
+// The pointer switch alone only reaches FUTURE sessions: one that is open right
+// now is bound to a sandbox booted from the previous image, and without this it
+// would keep serving that image until the session ends - so a skill installed
+// minutes ago would be missing from exactly the sessions whose user just asked
+// for it. Nothing is destroyed here; the binding is marked and the session's
+// next resolve rebuilds it.
+//
+// It is best-effort on purpose. It runs after the pointer switch, so the
+// install has already succeeded, and a binding that could not be marked is a
+// session serving a stale image - an annoyance, not a corruption. Turning that
+// into a failed install would be a lie about an image that is live and serving.
+//
+// The context is detached because the caller's is cancelled exactly when this
+// matters most: withConfigLock cancels the run's context the moment lock
+// renewal fails, and marking is ordinary Redis traffic that a dead context
+// fails outright.
 func (s *TenantSkillService) markConfigSandboxesStale(
 	ctx context.Context, tenantID uint64, configID string,
 ) {
-	_ = ctx
-	_ = tenantID
-	_ = configID
+	if s.sandboxes == nil {
+		return
+	}
+	markCtx, cancel := s.cleanupContext(context.WithoutCancel(ctx))
+	defer cancel()
+
+	if s.configs != nil {
+		entity, err := s.configs.GetByID(markCtx, tenantID, configID)
+		if err != nil {
+			logger.Warnf(markCtx,
+				"[skill] read config %s skill_rollout before marking sandboxes stale failed: %v",
+				configID, err)
+		} else if entity != nil && !entity.Config.RebuildsExistingOnSkillChange() {
+			logger.Infof(markCtx,
+				"[skill] config %s skill_rollout=%s; leaving live sandboxes on the previous image",
+				configID, types.SkillRolloutNewSession)
+			return
+		}
+	}
+
+	mgr, err := s.sandboxes.Resolve(markCtx, tenantID, configID)
+	if err != nil || mgr == nil {
+		logger.Warnf(markCtx,
+			"[skill] resolve sandbox config %s to mark its sandboxes stale failed: %v",
+			configID, err)
+		return
+	}
+	invalidator, ok := mgr.(configSandboxInvalidator)
+	if !ok {
+		return
+	}
+	marked, err := invalidator.InvalidateConfigSandboxes(markCtx, tenantID, configID)
+	if err != nil {
+		logger.Warnf(markCtx,
+			"[skill] mark live sandboxes of config %s stale failed: %v", configID, err)
+		return
+	}
+	if marked == 0 {
+		return
+	}
+	logger.Infof(markCtx,
+		"[skill] marked %d live sandbox binding(s) of config %s stale "+
+			"(this run's own maintenance session included); each remaining session "+
+			"rebuilds from the new image on its next use",
+		marked, configID)
 }
