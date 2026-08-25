@@ -1,16 +1,20 @@
 package service
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,6 +83,7 @@ func TestRunInstallIssuesExactlyTheseCommands(t *testing.T) {
 	require.Equal(t, []string{
 		installPrepareCommand,
 		"uv --version",
+		seedExtractCommand(installSkillDir),
 		"chmod -R 555 " + installSkillDir,
 		"chown -R root:root " + installSkillDir,
 		"test -f " + installSkillDir + "/SKILL.md",
@@ -1024,6 +1029,54 @@ func TestRunInstallPublishesTranscriptLocatorsBeforeTheAgentRuns(t *testing.T) {
 	require.NotEmpty(t, atExecute.InstallMessageID)
 }
 
+func TestRunInstallPublishesTranscriptLocatorsBeforeSeedingFiles(t *testing.T) {
+	fx := newInstallFixture(t)
+
+	var atSeed *types.TenantSkillEntity
+	fx.beforeSeed = func() {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		require.NoError(t, err)
+		copied := *skill
+		atSeed = &copied
+	}
+
+	require.NoError(t, fx.svc.runInstall(ctxWithTenant(7), 7, "cfg-1", "sk-1", fx.bundle))
+
+	require.NotNil(t, atSeed, "files were seeded without a hook")
+	require.NotEmpty(t, atSeed.InstallSessionID)
+	require.NotEmpty(t, atSeed.InstallMessageID)
+}
+
+func TestPackSkillTarRoundTrip(t *testing.T) {
+	bundle := &SkillBundle{Files: map[string][]byte{
+		"SKILL.md":           []byte("name: x"),
+		"scripts/extract.py": []byte("print(1)\n"),
+	}}
+	raw, err := packSkillTar(bundle)
+	require.NoError(t, err)
+
+	got := map[string][]byte{}
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		content, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		got[hdr.Name] = content
+	}
+	require.Equal(t, bundle.Files, got)
+}
+
+func TestPackSkillTarRejectsEscapingNames(t *testing.T) {
+	_, err := packSkillTar(&SkillBundle{Files: map[string][]byte{
+		"../etc/passwd": []byte("x"),
+	}})
+	require.Error(t, err)
+}
+
 // Maintenance sessions are excluded from the console by their description, and
 // scoped to the admin who started the install by their owner. Both are written
 // at creation time; neither has a backfill.
@@ -1107,6 +1160,9 @@ type installFixture struct {
 	// beforeExecute runs at the moment the engine would start, so a test can
 	// observe the state an attaching console would see mid-install.
 	beforeExecute func()
+	// beforeSeed runs on the first image file write, so a test can prove the
+	// transcript locators landed before the minutes-long copy begins.
+	beforeSeed func()
 	// staleMarks records every InvalidateConfigSandboxes call, so a test can
 	// state which config was marked rather than only that something was.
 	staleMarks []staleMark
@@ -1150,6 +1206,10 @@ type installFixture struct {
 	// whose archive will later be unreadable.
 	saveErr      error
 	savedBundles int
+	// storedBundles is what GetFile serves back, keyed by the SaveBytes
+	// reference, so ListSkillFiles / ReadSkillFile can open a stored archive.
+	storedBundles map[string][]byte
+	getFileCalls  atomic.Int32
 }
 
 func newInstallFixture(t *testing.T) *installFixture {
@@ -1661,9 +1721,57 @@ func (m *installSandboxManager) WriteSessionFile(
 		return nil
 	}
 	if !containsEvent(m.fx.events, "seed-files") {
+		if m.fx.beforeSeed != nil {
+			m.fx.beforeSeed()
+		}
 		m.fx.record("seed-files")
 	}
 	return nil
+}
+
+func (m *installSandboxManager) extractSeedArchive(command string) {
+	archive, ok := m.writeContents[skillSeedArchivePath]
+	if !ok {
+		return
+	}
+	skillDir := installSkillDir
+	if _, after, found := strings.Cut(command, " -C "); found {
+		dir, _, _ := strings.Cut(strings.TrimSpace(after), " ")
+		if dir != "" {
+			skillDir = dir
+		}
+	}
+	tr := tar.NewReader(bytes.NewReader(archive))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return
+		}
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
+			continue
+		}
+		content, err := io.ReadAll(tr)
+		if err != nil {
+			return
+		}
+		dest := path.Join(skillDir, hdr.Name)
+		m.writes = append(m.writes, dest)
+		if m.writeContents == nil {
+			m.writeContents = map[string][]byte{}
+		}
+		m.writeContents[dest] = content
+	}
+	delete(m.writeContents, skillSeedArchivePath)
+	kept := m.writes[:0]
+	for _, w := range m.writes {
+		if w != skillSeedArchivePath {
+			kept = append(kept, w)
+		}
+	}
+	m.writes = kept
 }
 
 func (m *installSandboxManager) RemoveSessionInputPath(context.Context, string, string) error {
@@ -1696,6 +1804,8 @@ func (m *installSandboxManager) ExecShellCommandWithOptions(
 	switch {
 	case command == installPrepareCommand:
 		m.fx.record("prepare-skill-dir")
+	case strings.HasPrefix(command, "tar -xf "):
+		m.extractSeedArchive(command)
 	case strings.HasPrefix(command, "test -f "):
 		if !m.structureSeen {
 			m.fx.record("verify-structure")
@@ -2103,17 +2213,31 @@ func (installFileService) SaveFile(context.Context, *multipart.FileHeader, uint6
 	return "", nil
 }
 
-func (s installFileService) SaveBytes(context.Context, []byte, uint64, string, bool) (string, error) {
+func (s installFileService) SaveBytes(_ context.Context, data []byte, _ uint64, _ string, _ bool) (string, error) {
 	if s.fx != nil {
 		s.fx.savedBundles++
 		if s.fx.saveErr != nil {
 			return "", s.fx.saveErr
 		}
+		if s.fx.storedBundles == nil {
+			s.fx.storedBundles = map[string][]byte{}
+		}
+		copied := make([]byte, len(data))
+		copy(copied, data)
+		s.fx.storedBundles["file://bundle.zip"] = copied
 	}
 	return "file://bundle.zip", nil
 }
-func (installFileService) GetFile(context.Context, string) (io.ReadCloser, error) { return nil, nil }
-func (installFileService) GetFileURL(context.Context, string) (string, error)     { return "", nil }
+func (s installFileService) GetFile(_ context.Context, ref string) (io.ReadCloser, error) {
+	if s.fx != nil {
+		s.fx.getFileCalls.Add(1)
+		if data, ok := s.fx.storedBundles[ref]; ok {
+			return io.NopCloser(bytes.NewReader(data)), nil
+		}
+	}
+	return nil, errors.New("bundle not found")
+}
+func (installFileService) GetFileURL(context.Context, string) (string, error) { return "", nil }
 func (s installFileService) DeleteFile(_ context.Context, ref string) error {
 	if s.fx != nil {
 		s.fx.deletedBundles = append(s.fx.deletedBundles, ref)
