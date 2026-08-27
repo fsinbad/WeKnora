@@ -133,11 +133,17 @@
             :class="{ 'skill-item--focused': focusedSkillId === skill.id }"
           >
             <div class="skill-status-ring" :title="statusLabel(skill)">
+              <!-- The percentage is spelled out in the meta line below, so the
+                   ring only has to show proportion: its own label is two digits
+                   crammed into 16px. The default 6px stroke is most of the
+                   radius at this size, which reads as a blob rather than a ring. -->
               <t-progress
                 v-if="isBusy(skill)"
                 theme="circle"
                 :percentage="progressOf(skill)"
                 :size="16"
+                :stroke-width="2"
+                :label="false"
               />
               <t-icon
                 v-else-if="skill.status === 'failed'"
@@ -172,6 +178,27 @@
                       :loading="togglingId === skill.id"
                       @change="(v: any) => toggleEnabled(skill, Boolean(v))"
                     />
+                  </t-tooltip>
+                  <t-tooltip
+                    :content="
+                      expandedEnvSkillId === skill.id
+                        ? $t('settings.sandbox.skillEnv.toggleHide')
+                        : $t('settings.sandbox.skillEnv.toggle')
+                    "
+                    placement="top"
+                  >
+                    <button
+                      type="button"
+                      class="skill-item__icon-btn"
+                      :class="{ 'is-on': expandedEnvSkillId === skill.id }"
+                      :aria-label="$t('settings.sandbox.skillEnv.toggle')"
+                      @click="toggleEnvs(skill)"
+                    >
+                      <t-icon
+                        :name="expandedEnvSkillId === skill.id ? 'chevron-up' : 'key'"
+                        size="16px"
+                      />
+                    </button>
                   </t-tooltip>
                   <span class="skill-item__actions-divider" />
                   <t-tooltip :content="$t('settings.sandbox.skillFiles')" placement="top">
@@ -271,6 +298,21 @@
                       </span>
                     </button>
                   </t-tooltip>
+                  <t-tooltip
+                    v-if="skill.status === 'failed'"
+                    :content="$t('settings.sandbox.skillRetryHint')"
+                    placement="top"
+                  >
+                    <button
+                      type="button"
+                      class="skill-item__icon-btn"
+                      :disabled="retryingId === skill.id"
+                      :aria-label="$t('settings.sandbox.skillRetry')"
+                      @click="retrySkill(skill)"
+                    >
+                      <t-icon name="refresh" size="16px" />
+                    </button>
+                  </t-tooltip>
                   <t-popconfirm
                     theme="warning"
                     :content="deleteHint"
@@ -308,7 +350,82 @@
                   {{ isCopyExpanded(skill.id) ? $t('common.collapse') : $t('common.expand') }}
                 </button>
               </div>
-              <p v-if="failedError(skill)" class="skill-item__error">{{ failedError(skill) }}</p>
+              <ul v-if="failedErrorLines(skill).length" class="skill-item__error">
+                <li v-for="(line, i) in failedErrorLines(skill)" :key="i">{{ line }}</li>
+              </ul>
+            </div>
+
+            <div v-if="expandedEnvSkillId === skill.id" class="skill-item__envs">
+              <p v-if="!skill.envs || skill.envs.length === 0" class="skill-envs__none">
+                {{ $t('settings.sandbox.skillEnv.none') }}
+              </p>
+              <template v-else>
+                <h5 class="skill-envs__title">{{ $t('settings.sandbox.skillEnv.workspaceTitle') }}</h5>
+                <p class="skill-envs__hint">{{ $t('settings.sandbox.skillEnv.workspaceHint') }}</p>
+                <div class="skill-envs__rows">
+                  <div v-for="env in skill.envs" :key="env.name" class="skill-envs__row">
+                    <div class="skill-envs__meta">
+                      <code class="skill-envs__name">{{ env.name }}</code>
+                      <span v-if="env.required" class="skill-envs__tag skill-envs__tag--required">
+                        {{ $t('settings.sandbox.skillEnv.required') }}
+                      </span>
+                      <span
+                        class="skill-envs__tag"
+                        :class="env.is_set ? 'skill-envs__tag--set' : 'skill-envs__tag--unset'"
+                      >
+                        {{
+                          env.is_set
+                            ? $t('settings.sandbox.skillEnv.isSet')
+                            : $t('settings.sandbox.skillEnv.notSet')
+                        }}
+                      </span>
+                      <span v-if="env.description" class="skill-envs__desc">{{ env.description }}</span>
+                    </div>
+                    <div class="skill-envs__editor">
+                      <t-input
+                        v-model="envDrafts[skill.id][env.name]"
+                        type="password"
+                        autocomplete="off"
+                        :aria-label="env.name"
+                        :placeholder="
+                          env.is_set
+                            ? $t('settings.sandbox.skillEnv.placeholderSet')
+                            : $t('settings.sandbox.skillEnv.placeholderUnset')
+                        "
+                      />
+                      <t-popconfirm
+                        v-if="canClearAdminSkillEnv(env)"
+                        theme="warning"
+                        :content="$t('settings.sandbox.skillEnv.clearConfirm', { name: env.name })"
+                        :confirm-btn="{ content: $t('settings.sandbox.skillEnv.clear'), theme: 'danger' }"
+                        :cancel-btn="{ content: $t('common.cancel') }"
+                        @confirm="clearEnv(skill, env.name)"
+                      >
+                        <t-button
+                          theme="danger"
+                          variant="text"
+                          size="small"
+                          :disabled="envSaveInFlight(skill)"
+                          :loading="envSaveInFlight(skill)"
+                        >
+                          {{ $t('settings.sandbox.skillEnv.clear') }}
+                        </t-button>
+                      </t-popconfirm>
+                    </div>
+                  </div>
+                </div>
+                <div class="skill-envs__footer">
+                  <t-button
+                    theme="primary"
+                    size="small"
+                    :disabled="!hasEnvEdits(skill) || envSaveInFlight(skill)"
+                    :loading="envSaveInFlight(skill)"
+                    @click="saveEnvs(skill)"
+                  >
+                    {{ $t('settings.sandbox.skillEnv.save') }}
+                  </t-button>
+                </div>
+              </template>
             </div>
           </li>
         </ul>
@@ -325,7 +442,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
@@ -344,6 +461,7 @@ import {
   updateSandboxConfigById,
   listConfigSkills,
   patchConfigSkill,
+  reinstallConfigSkill,
   uploadConfigSkill,
   installConfigSkillFromSource,
   type ConfigSkill,
@@ -354,6 +472,18 @@ import {
 import { getApiBaseUrl } from '@/utils/api-base'
 import { generateRandomString } from '@/utils/index'
 import i18n from '@/i18n'
+import {
+  MAX_ENV_VALUE_BYTES,
+  addSkillEnvSaveInFlight,
+  adminSkillEnvClearPayload,
+  canClearAdminSkillEnv,
+  clearSkillEnvSaveInFlight,
+  clearSubmittedSkillEnvDrafts,
+  editedSkillEnvPayload,
+  isSkillEnvSaveInFlight,
+  isValidEnvValueLength,
+  type SkillEnvSavesInFlight,
+} from '@/views/settings/envVarState'
 
 // Skills are installed into the config's snapshot image, so the panel needs a
 // config that already exists. The editor only renders it on a saved config.
@@ -378,6 +508,7 @@ const skills = ref<ConfigSkill[]>([])
 const skillImage = ref<SandboxSkillImage | null>(null)
 const togglingId = ref('')
 const deletingId = ref('')
+const retryingId = ref('')
 // Only one install timeline is open at a time: each one holds an SSE
 // connection, and two runs' worth of agent steps in a drawer is unreadable.
 const expandedSkillId = ref('')
@@ -389,6 +520,15 @@ const transcriptEpoch = ref(0)
 const focusedSkillId = ref('')
 const skillItemEls = new Map<string, HTMLElement>()
 let focusTimer: number | null = null
+// Workspace-wide env values. Only one skill's editor is open at a time, for the
+// same reason as the timeline: the row is already dense.
+const expandedEnvSkillId = ref('')
+// Drafts keyed by skill then variable name. An absent key means "the admin did
+// not touch this field", which is what keeps the PATCH partial: an empty string
+// clears the stored value server-side, so submitting every input would wipe
+// values nobody looked at.
+const envDrafts = reactive<Record<string, Record<string, string>>>({})
+const envSavesInFlight = ref<SkillEnvSavesInFlight>({})
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const progressById = ref<Record<string, ConfigSkillInstallEvent>>({})
 
@@ -523,6 +663,90 @@ function openSkillFiles(skill: ConfigSkill) {
   filesDrawerVisible.value = true
 }
 
+function toggleEnvs(skill: ConfigSkill) {
+  if (expandedEnvSkillId.value === skill.id) {
+    expandedEnvSkillId.value = ''
+    return
+  }
+  // Reopening starts from a clean slate rather than resurrecting a half-typed
+  // secret from the last time the editor was open.
+  envDrafts[skill.id] = {}
+  expandedEnvSkillId.value = skill.id
+}
+
+function envPayload(skill: ConfigSkill): Record<string, string> {
+  return editedSkillEnvPayload(
+    (skill.envs || []).map((env) => env.name),
+    envDrafts[skill.id],
+  )
+}
+
+function hasEnvEdits(skill: ConfigSkill): boolean {
+  return Object.keys(envPayload(skill)).length > 0
+}
+
+function envSaveInFlight(skill: ConfigSkill): boolean {
+  const configId = props.record?.id
+  return configId
+    ? isSkillEnvSaveInFlight(envSavesInFlight.value, configId, skill.id)
+    : false
+}
+
+async function saveEnvs(skill: ConfigSkill) {
+  const envs = envPayload(skill)
+  if (Object.keys(envs).length === 0) return
+  if (Object.values(envs).some((value) => !isValidEnvValueLength(value))) {
+    MessagePlugin.error(
+      t('settings.sandbox.skillEnv.valueTooLong', { max: MAX_ENV_VALUE_BYTES }),
+    )
+    return
+  }
+  await submitEnvs(skill, envs, 'settings.sandbox.skillEnv.saveSuccess')
+}
+
+async function clearEnv(skill: ConfigSkill, name: string) {
+  await submitEnvs(skill, adminSkillEnvClearPayload(name), 'settings.sandbox.skillEnv.clearSuccess')
+}
+
+async function submitEnvs(
+  skill: ConfigSkill,
+  envs: Record<string, string>,
+  successKey: string,
+) {
+  if (!props.record) return
+  const configId = props.record.id
+  if (isSkillEnvSaveInFlight(envSavesInFlight.value, configId, skill.id)) return
+  // A response that lands after the drawer moved to another config describes a
+  // panel nobody is looking at any more.
+  const isCurrent = () => props.record?.id === configId
+  envSavesInFlight.value = addSkillEnvSaveInFlight(
+    envSavesInFlight.value,
+    configId,
+    skill.id,
+  )
+  try {
+    const res = await patchConfigSkill(configId, skill.id, { envs })
+    if (!isCurrent()) return
+    const updated = res?.data
+    if (updated) {
+      skills.value = skills.value.map((item) => (item.id === skill.id ? updated : item))
+    }
+    // Nothing reads a stored value back. Remove only values that are still the
+    // submitted ones; newer typing during the request must survive cleanup.
+    envDrafts[skill.id] = clearSubmittedSkillEnvDrafts(envDrafts[skill.id] || {}, envs)
+    MessagePlugin.success(t(successKey))
+  } catch (e: any) {
+    if (!isCurrent()) return
+    MessagePlugin.error(e?.message || t('settings.sandbox.skillEnv.saveFailed'))
+  } finally {
+    envSavesInFlight.value = clearSkillEnvSaveInFlight(
+      envSavesInFlight.value,
+      configId,
+      skill.id,
+    )
+  }
+}
+
 function progressOf(skill: ConfigSkill): number {
   const percent = progressById.value[skill.id]?.percent
   if (typeof percent === 'number' && Number.isFinite(percent)) {
@@ -535,9 +759,31 @@ function progressLog(skill: ConfigSkill): string {
   return progressById.value[skill.id]?.log || ''
 }
 
+// A re-run reuses the skill id, so the previous run's last event is still the
+// one cached here. Left in place it renders as this run's state: a retry would
+// open at 100% showing the failure it was started to fix, until the first new
+// event lands.
+function forgetProgress(skillId: string) {
+  if (!(skillId in progressById.value)) return
+  const next = { ...progressById.value }
+  delete next[skillId]
+  progressById.value = next
+}
+
 function failedError(skill: ConfigSkill): string {
   if (skill.status !== 'failed') return ''
   return skill.error || progressLog(skill)
+}
+
+// Script verification reports every problem it found rather than stopping at
+// the first, so one failure is often several lines. Run together they are
+// unreadable, and the list is what tells the operator whether this is one
+// missing package or a bundle that needs rebuilding.
+function failedErrorLines(skill: ConfigSkill): string[] {
+  return failedError(skill)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
 }
 
 function isCopyExpanded(skillId: string): boolean {
@@ -783,6 +1029,9 @@ async function uploadFile(file: File) {
     })
     MessagePlugin.success(t('settings.sandbox.skillUploadAccepted'))
     const skillId = res?.data?.skill_id
+    // Re-uploading a skill by the same name reuses its row, so this may be a
+    // second run of a skill already on screen.
+    if (skillId) forgetProgress(skillId)
     await loadSkills()
     await refreshImage()
     if (skillId) {
@@ -813,6 +1062,7 @@ async function installFromSource() {
     MessagePlugin.success(t('settings.sandbox.skillUploadAccepted'))
     sourceInput.value = ''
     const skillId = res?.data?.skill_id
+    if (skillId) forgetProgress(skillId)
     await loadSkills()
     await refreshImage()
     if (skillId) {
@@ -855,6 +1105,25 @@ async function toggleEnabled(skill: ConfigSkill, enabled: boolean) {
   }
 }
 
+// The server still holds the archive, so a retry needs nothing from the
+// operator. It reuses the same row, which is why the progress follow can be
+// re-attached under the id already on screen.
+async function retrySkill(skill: ConfigSkill) {
+  if (!props.record) return
+  retryingId.value = skill.id
+  forgetProgress(skill.id)
+  try {
+    await reinstallConfigSkill(props.record.id, skill.id)
+    MessagePlugin.success(t('settings.sandbox.skillRetryAccepted'))
+    await loadSkills()
+    followProgress(skill.id)
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || t('settings.sandbox.skillRetryFailed'))
+  } finally {
+    retryingId.value = ''
+  }
+}
+
 async function removeSkill(skill: ConfigSkill) {
   if (!props.record) return
   deletingId.value = skill.id
@@ -875,7 +1144,11 @@ async function removeSkill(skill: ConfigSkill) {
 // steps tears the follows down and coming back re-reads the list.
 watch(
   () => props.record?.id,
-  (configID) => {
+  (configID, previousConfigID) => {
+    if (configID !== previousConfigID) {
+      expandedEnvSkillId.value = ''
+      for (const skillId of Object.keys(envDrafts)) delete envDrafts[skillId]
+    }
     if (configID) {
       void loadAll()
       return
@@ -1106,6 +1379,101 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px var(--td-brand-color-focus, rgba(0, 168, 112, 0.18));
 }
 
+.skill-item__envs {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--td-component-stroke);
+  padding-top: 10px;
+}
+
+.skill-envs__none {
+  margin: 0;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.skill-envs__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.skill-envs__hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+}
+
+.skill-envs__rows {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skill-envs__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skill-envs__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-envs__name {
+  font-family: var(--td-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+  overflow-wrap: anywhere;
+}
+
+.skill-envs__tag {
+  font-size: 12px;
+  line-height: 18px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+}
+
+.skill-envs__tag--required {
+  background: var(--td-warning-color-light);
+  color: var(--td-warning-color);
+}
+
+.skill-envs__tag--set {
+  background: var(--td-success-color-light);
+  color: var(--td-success-color);
+}
+
+.skill-envs__desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+}
+
+.skill-envs__editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-envs__editor :deep(.t-input__wrap) {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-envs__footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .skill-status-ring {
   width: 16px;
   height: 16px;
@@ -1116,10 +1484,16 @@ onUnmounted(() => {
   flex-shrink: 0;
   color: var(--td-text-color-secondary);
 
-  :deep(.t-progress),
   :deep(.t-icon) {
     width: 16px;
     height: 16px;
+  }
+
+  /* The ring is already sized to 16px by the component. The svg is inline by
+     default, so without this it sits on a text baseline and pushes the ring
+     a few pixels below the icon the other two states draw. */
+  :deep(.t-progress--circle svg) {
+    display: block;
   }
 
   &__ready {
@@ -1166,9 +1540,27 @@ onUnmounted(() => {
 .skill-item__desc,
 .skill-item__error {
   margin: 0;
+  padding: 0;
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
+  list-style: none;
+}
+
+/* Verification reports every problem it found, so a failure is often several
+   lines. They are bulleted only when there is more than one: a lone problem
+   reads as a sentence, not as a one-item list. */
+.skill-item__error li:not(:only-child) {
+  padding-left: 10px;
+  text-indent: -10px;
+}
+
+.skill-item__error li:not(:only-child)::before {
+  content: '· ';
+}
+
+.skill-item__error li + li {
+  margin-top: 2px;
 }
 
 .skill-item__copy {
