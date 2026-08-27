@@ -3,7 +3,6 @@ package skills
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -49,7 +48,7 @@ func TestMissingSkillEnvErrorMessageNamesSkillVarsAndWhereToSetThem(t *testing.T
 	require.Contains(t, msg, "web-search")
 	require.Contains(t, msg, "TAVILY_API_KEY")
 	require.Contains(t, msg, "SERP_TOKEN")
-	require.Contains(t, msg, "Environment variables")
+	require.Contains(t, msg, "Sandbox secrets")
 
 	var typed *MissingSkillEnvError
 	require.True(t, errors.As(err, &typed))
@@ -139,7 +138,11 @@ func TestExecuteScriptWithoutResolverInjectsNothingExtra(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 1, sandboxMgr.calls)
+	injected := map[string]bool{}
+	for _, name := range InjectedSandboxEnvVars() {
+		injected[name] = true
+	}
 	for key := range sandboxMgr.config.Env {
-		require.True(t, strings.HasPrefix(key, "WEKNORA_"), "unexpected env key %q", key)
+		require.True(t, injected[key], "injected env %q is not in InjectedSandboxEnvVars", key)
 	}
 }
