@@ -140,9 +140,14 @@
                     <StorageEngineSettings />
                   </div>
 
-                  <!-- 技能沙箱 -->
+                  <!-- 沙箱 -->
                   <div v-if="currentSection === 'sandbox'" class="section">
                     <SandboxSettings />
+                  </div>
+
+                  <!-- 技能目录：登记后可装到多份沙箱，智能体只从当前沙箱的就绪集合选用 -->
+                  <div v-if="currentSection === 'skills'" class="section">
+                    <SkillSettings :initial-sandbox-id="currentSubSection" />
                   </div>
 
                   <!-- 系统信息 -->
@@ -228,6 +233,7 @@ import VectorStoreSettings from './VectorStoreSettings.vue'
 import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageBackendSettings.vue'
 import SandboxSettings from './SandboxSettings.vue'
+import SkillSettings from './SkillSettings.vue'
 import TenantMembers from './TenantMembers.vue'
 import SystemSettings from '@/views/system/SystemSettings.vue'
 import RuntimeQueues from '@/views/system/RuntimeQueues.vue'
@@ -244,6 +250,7 @@ import {
   SYSTEM_ADMIN_SETTINGS_SECTIONS,
 } from '@/config/settingsAccess'
 import { SETTINGS_SECTION_CAPABILITY } from '@/config/deploymentCapabilities'
+import { SKILL_ICON } from '@/types/mention'
 import {
   buildSettingsRouteQuery,
   integrationSectionKey,
@@ -282,7 +289,7 @@ type NavGroup = {
 // internal/router/router.go 的守卫矩阵对齐。
 // 以「页面里至少有 1 个有意义的写操作所要求的最低角色」为基准，把基础设
 // 施配置（models 写、ollama 下载、websearch 写、parser/storage/vector/mcp
-// CRUD、chat-history 配置）统一收到 admin；只读类（general / system info /
+// CRUD、sandbox 连接、skills 安装、chat-history 配置）统一收到 admin；只读类（general / system info /
 // tenant-info / members 名册）保留 viewer 可见；最高敏感的 reset api
 // key 是 owner-only。改这张表前请在 router.go 里复核对应路由组。
 //
@@ -356,6 +363,7 @@ const navItems = computed(() => {
     { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
     { key: 'storage', icon: 'cloud', label: t('settings.storageEngine') },
     { key: 'sandbox', icon: 'code', label: t('settings.sandbox.title') },
+    { key: 'skills', icon: SKILL_ICON, label: t('settings.skills.title') },
     { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
     { key: 'system', icon: 'info-circle', label: t('settings.versionInfo') },
     { key: 'system-global', icon: 'server', label: t('settings.system') },
@@ -418,6 +426,7 @@ const navGroups = computed<NavGroup[]>(() => {
         'parser',
         'storage',
         'sandbox',
+        'skills',
         'websearch',
         'mcp',
       ]),
@@ -519,11 +528,21 @@ watch(() => uiStore.settingsInitialSection, (section) => {
           }
         }, 300)
       }
+    } else if (normalizedSection === 'skills') {
+      // Sandbox config id from the agent editor / sandbox cards. Skills has
+      // no nav children, so this is the only way to preselect the target image.
+      currentSubSection.value = uiStore.settingsInitialSubSection || ''
     } else {
       currentSubSection.value = ''
     }
   }
 }, { immediate: true })
+
+watch(() => uiStore.settingsInitialSubSection, (sub) => {
+  if (uiStore.settingsInitialSection === 'skills' && visible.value) {
+    currentSubSection.value = sub || ''
+  }
+})
 
 watch(
   () => [visible.value, route.path, route.query.section, deploymentCapabilities.loaded] as const,
@@ -546,7 +565,9 @@ watch(
       return
     }
     currentSection.value = normalizedSection
-    currentSubSection.value = ''
+    currentSubSection.value = normalizedSection === 'skills'
+      ? (uiStore.settingsInitialSubSection || '')
+      : ''
     syncSettingsRoute(normalizedSection)
   },
   { immediate: true },
